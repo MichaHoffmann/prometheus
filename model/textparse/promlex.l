@@ -16,6 +16,7 @@ package textparse
 
 import (
     "fmt"
+    "io"
 )
 
 const (
@@ -36,11 +37,14 @@ const (
 // token. The method is opened before the matching rules block and closed at
 // the end of the file.
 func (l *promlexer) Lex() token {
-    if l.i >= len(l.b) {
-        return tEOF
+    if err := l.prepare(); err != nil {
+      l.err = err
+      if err == io.EOF {
+          return tEOF
+      }
+      return tInvalid
     }
     c := l.b[l.i]
-    l.start = l.i
 
 %}
 

@@ -17,6 +17,8 @@
 package textparse
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +37,7 @@ import (
 )
 
 type promlexer struct {
+	s     *bufio.Scanner
 	b     []byte
 	i     int
 	start int
@@ -137,6 +140,22 @@ func (l *promlexer) next() byte {
 	return l.b[l.i]
 }
 
+func (l *promlexer) prepare() error {
+	if l.i >= len(l.b) {
+		if !l.s.Scan() {
+			if err := l.s.Err(); err == nil {
+				return io.EOF
+			}
+			return l.s.Err()
+		}
+		l.start, l.i = 0, 0
+		l.b = append(l.s.Bytes(), '\n')
+	} else {
+		l.start = l.i
+	}
+	return nil
+}
+
 func (l *promlexer) Error(es string) {
 	l.err = errors.New(es)
 }
@@ -158,7 +177,7 @@ type PromParser struct {
 
 // NewPromParser returns a new parser of the byte slice.
 func NewPromParser(b []byte) Parser {
-	return &PromParser{l: &promlexer{b: append(b, '\n')}}
+	return &PromParser{l: &promlexer{s: bufio.NewScanner(bytes.NewReader(append(b, '\n')))}}
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
@@ -218,13 +237,13 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 	s := string(p.series)
 
 	p.builder.Reset()
-	p.builder.Add(labels.MetricName, s[:p.offsets[0]-p.start])
+	p.builder.Add(labels.MetricName, s[:p.offsets[0]])
 
 	for i := 1; i < len(p.offsets); i += 4 {
-		a := p.offsets[i] - p.start
-		b := p.offsets[i+1] - p.start
-		c := p.offsets[i+2] - p.start
-		d := p.offsets[i+3] - p.start
+		a := p.offsets[i]
+		b := p.offsets[i+1]
+		c := p.offsets[i+2]
+		d := p.offsets[i+3]
 
 		value := s[c:d]
 		// Replacer causes allocations. Replace only when necessary.
@@ -267,7 +286,7 @@ func (p *PromParser) parseError(exp string, got token) error {
 	if len(p.l.b) < e {
 		e = len(p.l.b)
 	}
-	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
+	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[:e])
 }
 
 // Next advances the parser to the next sample. It returns false if no
@@ -275,7 +294,6 @@ func (p *PromParser) parseError(exp string, got token) error {
 func (p *PromParser) Next() (Entry, error) {
 	var err error
 
-	p.start = p.l.i
 	p.offsets = p.offsets[:0]
 
 	switch t := p.nextToken(); t {
@@ -341,21 +359,21 @@ func (p *PromParser) Next() (Entry, error) {
 
 	case tMName:
 		p.offsets = append(p.offsets, p.l.i)
-		p.series = p.l.b[p.start:p.l.i]
+		p.series = p.l.b[:p.l.i]
 
 		t2 := p.nextToken()
 		if t2 == tBraceOpen {
 			if err := p.parseLVals(); err != nil {
 				return EntryInvalid, err
 			}
-			p.series = p.l.b[p.start:p.l.i]
+			p.series = p.l.b[:p.l.i]
 			t2 = p.nextToken()
 		}
 		if t2 != tValue {
 			return EntryInvalid, p.parseError("expected value after metric", t2)
 		}
 		if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
-			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
+			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[:p.l.i])
 		}
 		// Ensure canonical NaN value.
 		if math.IsNaN(p.val) {
@@ -368,7 +386,7 @@ func (p *PromParser) Next() (Entry, error) {
 		case tTimestamp:
 			p.hasTS = true
 			if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
-				return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
+				return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[:p.l.i])
 			}
 			if t2 := p.nextToken(); t2 != tLinebreak {
 				return EntryInvalid, p.parseError("expected next entry after timestamp", t2)
