@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build dedupelabels && !thanoslabels
+//go:build thanoslabels
 
 package labels
 
@@ -22,31 +22,27 @@ import (
 // StableHash is a labels hashing implementation which is guaranteed to not change over time.
 // This function should be used whenever labels hashing backward compatibility must be guaranteed.
 func StableHash(ls Labels) uint64 {
-	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
-	for pos := 0; pos < len(ls.data); {
-		name, newPos := decodeString(ls.syms, ls.data, pos)
-		value, newPos := decodeString(ls.syms, ls.data, newPos)
-		if len(b)+len(name)+len(value)+2 >= cap(b) {
-			// If labels entry is 1KB+, hash the rest of them via Write().
-			h := xxhash.New()
+	var h *xxhash.Digest
+	for _, l := range ls.data {
+		if h == nil && len(b)+len(l.Name)+len(l.Value)+2 >= cap(b) {
+			h = xxhash.New()
 			_, _ = h.Write(b)
-			for pos < len(ls.data) {
-				name, pos = decodeString(ls.syms, ls.data, pos)
-				value, pos = decodeString(ls.syms, ls.data, pos)
-				_, _ = h.WriteString(name)
-				_, _ = h.Write(seps)
-				_, _ = h.WriteString(value)
-				_, _ = h.Write(seps)
-			}
-			return h.Sum64()
 		}
-
-		b = append(b, name...)
+		if h != nil {
+			_, _ = h.WriteString(l.Name)
+			_, _ = h.Write(seps)
+			_, _ = h.WriteString(l.Value)
+			_, _ = h.Write(seps)
+			continue
+		}
+		b = append(b, l.Name...)
 		b = append(b, sep)
-		b = append(b, value...)
+		b = append(b, l.Value...)
 		b = append(b, sep)
-		pos = newPos
+	}
+	if h != nil {
+		return h.Sum64()
 	}
 	return xxhash.Sum64(b)
 }

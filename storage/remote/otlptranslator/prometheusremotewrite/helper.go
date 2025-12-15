@@ -160,7 +160,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	l := make(map[string]string, maxLabelCount)
 	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: settings.AllowUTF8}
 	for _, label := range labels {
-		finalKey := labelNamer.Build(label.Name)
+		finalKey, _ := labelNamer.Build(label.Name)
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
 		} else {
@@ -169,14 +169,14 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 	}
 
 	for _, lbl := range promotedAttrs {
-		normalized := labelNamer.Build(lbl.Name)
+		normalized, _ := labelNamer.Build(lbl.Name)
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
 		}
 	}
 	if promoteScope {
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
-			name := labelNamer.Build("otel_scope_" + k)
+			name, _ := labelNamer.Build("otel_scope_" + k)
 			l[name] = v.AsString()
 			return true
 		})
@@ -219,7 +219,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope s
 		}
 		// internal labels should be maintained.
 		if len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__" {
-			name = labelNamer.Build(name)
+			name, _ = labelNamer.Build(name)
 		}
 		l[name] = extras[i+1]
 	}

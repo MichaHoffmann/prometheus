@@ -170,7 +170,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
+				promName, _ := namer.Build(TranslatorMetricFromOtelMetric(metric))
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
